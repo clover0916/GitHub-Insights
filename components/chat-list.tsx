@@ -25,15 +25,15 @@ export function ChatList({ messages, session, isShared }: ChatList) {
             </div>
             <div className="ml-4 flex-1 space-y-2 overflow-hidden px-1">
               <p className="text-muted-foreground leading-normal">
-                Please{' '}
+                チャット履歴を保存するには、
                 <Link href="/login" className="underline">
-                  log in
-                </Link>{' '}
-                or{' '}
+                  ログイン
+                </Link>
+                または
                 <Link href="/signup" className="underline">
-                  sign up
-                </Link>{' '}
-                to save and revisit your chat history!
+                  サインアップ
+                </Link>
+                してください！
               </p>
             </div>
           </div>
@@ -43,8 +43,12 @@ export function ChatList({ messages, session, isShared }: ChatList) {
 
       {messages.map((message, index) => (
         <div key={message.id}>
-          {message.display}
-          {index < messages.length - 1 && <Separator className="my-4" />}
+          {message.display && (
+            <>
+              {message.display}
+              {index < messages.length - 1 && <Separator className="my-4" />}
+            </>
+          )}
         </div>
       ))}
     </div>

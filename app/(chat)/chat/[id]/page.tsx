@@ -51,6 +51,10 @@ export default async function ChatPage({ params }: ChatPageProps) {
       notFound()
     }
 
+    chat.messages.map((message) => {
+      console.log(message)
+    });
+
     return (
       <AI initialAIState={{ chatId: chat.id, messages: chat.messages }}>
         <Chat

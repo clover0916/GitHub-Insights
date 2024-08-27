@@ -15,7 +15,7 @@ import {
   BotCard,
   BotMessage,
   SystemMessage,
-  RepositoryInfo,
+  ListRepositories,
   AnalysisMode,
   AnalysisResult
 } from '@/components/github'
@@ -35,6 +35,7 @@ import { Chat, Message } from '@/lib/types'
 import { auth } from '@/auth'
 import { Octokit } from "@octokit/rest";
 import { rateLimit } from './ratelimit';
+import { RepositoryInfo } from '@/components/github/repository-info';
 
 async function submitUserMessage(content: string) {
   'use server'
@@ -68,7 +69,7 @@ async function submitUserMessage(content: string) {
 
     1. ユーザーのGitHubアカウントに関連付けられたリポジトリ一覧を取得するには、\`list_repositories\`を呼び出します。これにより、ユーザーが所有または貢献しているリポジトリのリストが表示されます。
 
-    2. ユーザーがリストからリポジトリを選択するか、URLを直接入力した場合、選択されたリポジトリの分析を開始します。リポジトリの内容を分析するための分析モードを選択する必要があります。
+    2. ユーザーがリストからリポジトリを選択するか、URLを直接入力した場合、選択されたリポジトリの情報を\`show_repository_info\`を呼び出し表示する。
 
     3. ユーザーが分析モードを選択する必要がある場合は、\`show_analysis_modes\`を呼び出して分析モード選択UIを表示します。
 
@@ -76,10 +77,6 @@ async function submitUserMessage(content: string) {
       - プロジェクト履歴の分析結果を表示する場合：\`display_history_analysis\`
       - フォルダ内容の分析結果を表示する場合：\`display_folder_analysis\`
       - リポジトリ全体のコード分析結果を表示する場合：\`display_code_analysis\`
-
-    5. []内のメッセージは、UI要素またはユーザーイベントを意味します。例：
-      - "[ユーザーがリポジトリ 'octocat/Hello-World' を選択しました]"
-      - "[ユーザーが分析モード2を選択しました]"
 
     ユーザーが分析結果の詳細な説明を求めた場合や、コードの特定の部分について質問した場合は、あなたの知識を活用して丁寧に回答してください。技術的な説明や、コードの改善点、セキュリティの懸念事項などについても適切にアドバイスできます。
 
@@ -122,7 +119,7 @@ async function submitUserMessage(content: string) {
       list_repositories: {
         description: 'ユーザーのリポジトリ情報を表示します。',
         parameters: z.object({
-          dummy: z.string().optional().describe('このパラメータは使用されません。')
+          dummy: z.string().optional().describe('このパラメータは使用されません。'),
         }),
         generate: async function* () {
           const toolCallId = nanoid()
@@ -150,7 +147,7 @@ async function submitUserMessage(content: string) {
             auth: session.accessToken
           })
 
-          const repositories = await octokit.repos.listForAuthenticatedUser({
+          const repos = await octokit.repos.listForAuthenticatedUser({
             per_page: 100
           })
 
@@ -166,7 +163,7 @@ async function submitUserMessage(content: string) {
                     type: 'tool-call',
                     toolName: 'list_repositories',
                     toolCallId,
-                    args: {}
+                    args: { repos: repos.data }
                   }
                 ]
               },
@@ -179,7 +176,7 @@ async function submitUserMessage(content: string) {
                     toolName: 'list_repositories',
                     toolCallId,
                     result: {
-                      repositories: repositories.data
+                      repos: repos.data,
                     }
                   }
                 ]
@@ -189,7 +186,87 @@ async function submitUserMessage(content: string) {
 
           return (
             <BotCard>
-              <RepositoryInfo props={{ repositories: repositories.data }} />
+              {textNode}
+              <ListRepositories props={{ repos: repos.data }} />
+            </BotCard>
+          )
+        }
+      },
+      show_repository_info: {
+        description: 'リポジトリ情報を表示します。',
+        parameters: z.object({
+          name: z.string().describe('リポジトリ名'),
+          owner: z.string().describe('所有者')
+        }),
+        generate: async function* ({ name, owner }) {
+          console.log("show_repository_info", name, owner)
+          await sleep(1000)
+
+          const toolCallId = nanoid()
+
+          const session = await auth()
+
+          if (!session) {
+            aiState.done({
+              ...aiState.get(),
+              messages: [
+                ...aiState.get().messages,
+                {
+                  id: nanoid(),
+                  role: 'assistant',
+                  content: 'GitHubの認証情報が見つかりませんでした。'
+                }
+              ]
+            })
+
+            return
+          }
+
+          const octokit = new Octokit({
+            auth: session.accessToken
+          })
+
+          const repo = await octokit.repos.get({
+            owner,
+            repo: name
+          })
+
+          aiState.done({
+            ...aiState.get(),
+            messages: [
+              ...aiState.get().messages,
+              {
+                id: nanoid(),
+                role: 'assistant',
+                content: [
+                  {
+                    type: 'tool-call',
+                    toolName: 'show_repository_info',
+                    toolCallId,
+                    args: { repo: repo.data }
+                  }
+                ]
+              },
+              {
+                id: nanoid(),
+                role: 'tool',
+                content: [
+                  {
+                    type: 'tool-result',
+                    toolName: 'show_repository_info',
+                    toolCallId,
+                    result: {
+                      repo: repo.data
+                    }
+                  }
+                ]
+              }
+            ]
+          })
+
+          return (
+            <BotCard>
+              <RepositoryInfo props={{ repo: repo.data }} />
             </BotCard>
           )
         }
@@ -443,10 +520,16 @@ export const getUIStateFromAIState = (aiState: Chat) => {
         message.role === 'tool' ? (
           message.content.map((tool: any) => { // Add type annotation for 'tool'
             switch (tool.toolName) {
-              case 'get_repository_info':
+              case 'list_repositories':
                 return (
                   <BotCard>
-                    <RepositoryInfo props={{ repositories: (tool.result as any).repositories }} /> // Add type annotation for 'tool.result'
+                    <ListRepositories props={{ repos: (tool.result as any).repos }} />
+                  </BotCard>
+                )
+              case 'show_repository_info':
+                return (
+                  <BotCard>
+                    <RepositoryInfo props={{ repo: (tool.result as any).repo }} />
                   </BotCard>
                 )
               case 'show_analysis_modes':
@@ -460,7 +543,7 @@ export const getUIStateFromAIState = (aiState: Chat) => {
               case 'display_code_analysis':
                 return (
                   <BotCard>
-                    <AnalysisResult props={{ type: tool.toolName.split('_')[1], content: (tool.result as any).analysis }} /> // Add type annotation for 'tool.result'
+                    <AnalysisResult props={{ type: tool.toolName.split('_')[1], content: (tool.result as any).analysis }} />
                   </BotCard>
                 )
               default:

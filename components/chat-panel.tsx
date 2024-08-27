@@ -36,9 +36,9 @@ export function ChatPanel({
 
   const exampleMessages = [
     {
-      heading: 'プロジェクト履歴の分析結果を表示する',
+      heading: 'リポジトリを選択して開始する',
       subheading: '',
-      message: 'display_history_analysisを呼び出します。'
+      message: 'リポジトリを選択したいです。'
     },
     {
       heading: 'フォルダ内容の分析結果を表示する',
@@ -109,7 +109,7 @@ export function ChatPanel({
                     onClick={() => setShareDialogOpen(true)}
                   >
                     <IconShare className="mr-2" />
-                    Share
+                    共有
                   </Button>
                   <ChatShareDialog
                     open={shareDialogOpen}

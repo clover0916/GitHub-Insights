@@ -8,23 +8,26 @@ import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, Command
 import { Button } from '@/components/ui/button'
 
 import type { AI } from '@/lib/chat/actions'
-import { IconCheck, IconChevronUpDown } from '../ui/icons';
+import { IconCheck, IconChevronUpDown, IconSpinner } from '../ui/icons';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
+import { UserMessage } from './message';
 
 type Repository = components["schemas"]["repository"];
 
 type ListRepositoriesProps = {
   props: {
-    repositories: Repository[]
+    repos: Repository[]
   }
 }
 
-export function ListRepositories({ props: { repositories } }: ListRepositoriesProps) {
+export function ListRepositories({ props: { repos } }: ListRepositoriesProps) {
   const [, setMessages] = useUIState<typeof AI>()
   const { submitUserMessage } = useActions()
   const [open, setOpen] = React.useState(false)
   const [value, setValue] = React.useState("")
+
+  const [isLoading, setIsLoading] = React.useState(false)
 
   return (
     <div>
@@ -36,27 +39,27 @@ export function ListRepositories({ props: { repositories } }: ListRepositoriesPr
               role="combobox"
               aria-expanded={open}
               className="flex"
+              disabled={isLoading}
             >
               {value
                 ? (() => {
-                  console.log(value);
-                  const repository = repositories.find(
-                    (repository) =>
-                      `${repository.owner.login}/${repository.name}` === value
+                  const repo = repos.find(
+                    (repo) =>
+                      `${repo.owner.login}/${repo.name}` === value
                   );
 
                   return (
                     <>
-                      {repository?.owner.avatar_url && (
+                      {repo?.owner.avatar_url && (
                         <Image
-                          src={repository.owner.avatar_url}
+                          src={repo.owner.avatar_url}
                           alt=""
                           width={20}
                           height={20}
                           className="rounded-full mr-2"
                         />
                       )}
-                      {repository?.owner.login}/{repository?.name}
+                      {repo?.owner.login}/{repo?.name}
                     </>
                   );
                 })()
@@ -70,10 +73,10 @@ export function ListRepositories({ props: { repositories } }: ListRepositoriesPr
               <CommandList>
                 <CommandEmpty>リポジトリが見つかりません</CommandEmpty>
                 <CommandGroup>
-                  {repositories.map((repository) => (
+                  {repos.map((repo) => (
                     <CommandItem
-                      key={repository.id}
-                      value={`${repository.owner.login}/${repository.name}`}
+                      key={repo.id}
+                      value={`${repo.owner.login}/${repo.name}`}
                       onSelect={(currentValue: React.SetStateAction<string>) => {
                         setValue(currentValue === value ? "" : currentValue);
                         setOpen(false);
@@ -83,19 +86,19 @@ export function ListRepositories({ props: { repositories } }: ListRepositoriesPr
                       <IconCheck
                         className={cn(
                           "mr-2 h-4 w-4",
-                          value === `${repository.owner.login}/${repository.name}`
+                          value === `${repo.owner.login}/${repo.name}`
                             ? "opacity-100"
                             : "opacity-0"
                         )}
                       />
                       <Image
-                        src={repository.owner.avatar_url}
+                        src={repo.owner.avatar_url}
                         alt=""
                         width={20}
                         height={20}
                         className="rounded-full mr-2"
                       />
-                      {repository.owner.login}/{repository.name}
+                      {repo.owner.login}/{repo.name}
                     </CommandItem>
                   ))}
                 </CommandGroup>
@@ -105,11 +108,25 @@ export function ListRepositories({ props: { repositories } }: ListRepositoriesPr
         </Popover>
         <Button
           onClick={async () => {
-            const response = await submitUserMessage(value);
+            setIsLoading(true)
 
+            setMessages(currentMessages => [
+              ...currentMessages,
+              {
+                id: Math.random().toString(),
+                display: <UserMessage>{value}</UserMessage>
+              }
+            ])
+
+            const response = await submitUserMessage(value);
             setMessages(currentMessages => [...currentMessages, response])
+            setIsLoading(false)
           }}
+          disabled={isLoading || !value}
         >
+          {isLoading && (
+            <IconSpinner className="mr-2 animate-spin" />
+          )}
           選択
         </Button>
       </div>

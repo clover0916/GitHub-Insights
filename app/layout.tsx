@@ -16,7 +16,7 @@ export const metadata = {
     default: 'Repository Insights',
     template: `%s - Repository Insights`
   },
-  description: 'An AI-powered chatbot template built with Next.js and Vercel.',
+  description: 'Repository Insights',
   icons: {
     icon: '/favicon.ico',
     shortcut: '/favicon-16x16.png',
@@ -37,7 +37,7 @@ interface RootLayoutProps {
 
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="ja" suppressHydrationWarning>
       <body
         className={cn(
           'font-sans antialiased',
