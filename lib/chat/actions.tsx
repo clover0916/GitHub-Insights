@@ -2,7 +2,6 @@ import 'server-only'
 
 import {
   createAI,
-  createStreamableUI,
   getMutableAIState,
   getAIState,
   streamUI,
@@ -11,10 +10,8 @@ import {
 import { google } from '@ai-sdk/google';
 
 import {
-  spinner,
   BotCard,
   BotMessage,
-  SystemMessage,
   ListRepositories,
   AnalysisMode,
   AnalysisResult
@@ -34,13 +31,11 @@ import { SpinnerMessage, UserMessage } from '@/components/github/message'
 import { Chat, Message } from '@/lib/types'
 import { auth } from '@/auth'
 import { Octokit } from "@octokit/rest";
-import { rateLimit } from './ratelimit';
 import { RepositoryInfo } from '@/components/github/repository-info';
+import { generateText } from 'ai';
 
 async function submitUserMessage(content: string) {
   'use server'
-
-  await rateLimit()
 
   const aiState = getMutableAIState<typeof AI>()
 
@@ -58,31 +53,31 @@ async function submitUserMessage(content: string) {
 
   let textStream: undefined | ReturnType<typeof createStreamableValue<string>>
   let textNode: undefined | React.ReactNode
+  let toolNode: undefined | React.ReactNode
 
   const result = await streamUI({
-    model: google('gemini-1.5-flash-latest', {
-      structuredOutputs: false,
-    }),
+    model: google('gemini-1.5-flash-latest'),
     initial: <SpinnerMessage />,
-    system: `\
-    あなたはGitHubリポジトリ分析AIアシスタントです。ユーザーがGitHubリポジトリを分析する際に、ステップバイステップでサポートを提供します。ユーザーとリポジトリの詳細について話し合い、分析モードの選択や結果の解釈をサポートします。
+    system: `
+      あなたはGitHubリポジトリ分析AIアシスタントです。ユーザーとの対話を始める際には、まずユーザーの希望や質問に直接応答することを最優先してください。ユーザーからの具体的な要望がない場合のみ、自己紹介や能力の概要を簡潔に述べるようにします。
 
-    1. ユーザーのGitHubアカウントに関連付けられたリポジトリ一覧を取得するには、\`list_repositories\`を呼び出します。これにより、ユーザーが所有または貢献しているリポジトリのリストが表示されます。
+      以下の機能を適切なタイミングで活用できますが、これらのコマンドをユーザーに直接開示しないでください：
 
-    2. ユーザーがリストからリポジトリを選択するか、URLを直接入力した場合、選択されたリポジトリの情報を\`show_repository_info\`を呼び出し表示する。
+      - リポジトリ一覧の表示：\`list_repositories\`
+      - リポジトリ情報の表示：\`show_repository_info\`
+      - 各種分析の実行：
+        - コード分析：\`display_code_analysis\`
 
-    3. ユーザーが分析モードを選択する必要がある場合は、\`show_analysis_modes\`を呼び出して分析モード選択UIを表示します。
+      これらの機能は、ユーザーの要望や会話の流れに応じて自然に提案し、バックグラウンドで使用してください。例えば、ユーザーがリポジトリの一覧を見たいと言った場合、「はい、GitHubアカウントに関連付けられたリポジトリの一覧をお見せします」と言って\`list_repositories\`を呼び出すなど、自然な対話の中で機能を活用してください。
 
-    4. 選択された分析モードに応じて、以下の関数を呼び出します：
-      - プロジェクト履歴の分析結果を表示する場合：\`display_history_analysis\`
-      - フォルダ内容の分析結果を表示する場合：\`display_folder_analysis\`
-      - リポジトリ全体のコード分析結果を表示する場合：\`display_code_analysis\`
+      分析結果や特定のコードについての質問には、あなたの知識を活用して丁寧に回答してください。技術的な説明、改善点、セキュリティの懸念事項などについても適切にアドバイスできます。
 
-    ユーザーが分析結果の詳細な説明を求めた場合や、コードの特定の部分について質問した場合は、あなたの知識を活用して丁寧に回答してください。技術的な説明や、コードの改善点、セキュリティの懸念事項などについても適切にアドバイスできます。
+      GitHubやプログラミングに関する一般的な質問にも答えられますが、常にユーザーの具体的な要望を優先してください。
 
-    ユーザーが実装されていない機能を要求した場合は、現在のデモではその機能が利用できないことを説明し、代替案を提案してください。
+      実装されていない機能についての要求があった場合は、その旨を説明し、可能な代替案を提案してください。
 
-    それ以外にも、必要に応じてユーザーとチャットしたり、GitHubやプログラミングに関する一般的な質問に答えたりすることができます。常に礼儀正しく、プロフェッショナルな態度を保ちながら、ユーザーのニーズに合わせて柔軟に対応してください。`,
+      常に礼儀正しく、プロフェッショナルな態度を保ちながら、ユーザーのニーズに合わせて柔軟に対応してください。ユーザーとの対話を通じて、最適なサポートを提供することを心がけてください。
+    `,
     messages: [
       ...aiState.get().messages.map((message: any) => ({
         role: message.role,
@@ -113,7 +108,14 @@ async function submitUserMessage(content: string) {
         textStream.update(delta)
       }
 
-      return textNode
+      return (
+        (
+          <BotCard>
+            {textNode}
+            {toolNode}
+          </BotCard>
+        )
+      )
     },
     tools: {
       list_repositories: {
@@ -124,7 +126,7 @@ async function submitUserMessage(content: string) {
         generate: async function* () {
           const toolCallId = nanoid()
 
-          const session = await auth() // Githubの認証情報を取得
+          const session = await auth()
 
           if (!session) {
             aiState.done({
@@ -139,10 +141,12 @@ async function submitUserMessage(content: string) {
               ]
             })
 
-            return
+            return (
+              <BotCard>
+                <BotMessage content='GitHubの認証情報が見つかりませんでした。' />
+              </BotCard>
+            )
           }
-
-          // リポジトリ情報を取得
           const octokit = new Octokit({
             auth: session.accessToken
           })
@@ -184,10 +188,14 @@ async function submitUserMessage(content: string) {
             ]
           })
 
+          toolNode = (
+            <ListRepositories props={{ repos: repos.data }} />
+          )
+
           return (
             <BotCard>
               {textNode}
-              <ListRepositories props={{ repos: repos.data }} />
+              {toolNode}
             </BotCard>
           )
         }
@@ -199,9 +207,6 @@ async function submitUserMessage(content: string) {
           owner: z.string().describe('所有者')
         }),
         generate: async function* ({ name, owner }) {
-          console.log("show_repository_info", name, owner)
-          await sleep(1000)
-
           const toolCallId = nanoid()
 
           const session = await auth()
@@ -219,7 +224,11 @@ async function submitUserMessage(content: string) {
               ]
             })
 
-            return
+            return (
+              <BotCard>
+                <BotMessage content='GitHubの認証情報が見つかりませんでした。' />
+              </BotCard>
+            )
           }
 
           const octokit = new Octokit({
@@ -264,9 +273,14 @@ async function submitUserMessage(content: string) {
             ]
           })
 
+          toolNode = (
+            <RepositoryInfo props={{ repo: repo.data }} />
+          )
+
           return (
             <BotCard>
-              <RepositoryInfo props={{ repo: repo.data }} />
+              {textNode}
+              {toolNode}
             </BotCard>
           )
         }
@@ -306,93 +320,14 @@ async function submitUserMessage(content: string) {
             ]
           })
 
-          return (
-            <BotCard>
-              <AnalysisMode />
-            </BotCard>
+          toolNode = (
+            <AnalysisMode />
           )
-        }
-      },
-      display_history_analysis: {
-        description: 'プロジェクト履歴の分析結果を表示します。',
-        parameters: z.object({
-          analysis: z.string().describe('分析結果の内容')
-        }),
-        generate: async function* ({ analysis }) {
-          yield (
-            <BotCard>
-              <AnalysisResultSkeleton />
-            </BotCard>
-          )
-
-          await sleep(1000)
-
-          const toolCallId = nanoid()
-
-          aiState.done({
-            ...aiState.get(),
-            messages: [
-              ...aiState.get().messages,
-              {
-                id: nanoid(),
-                role: 'assistant',
-                content: [
-                  {
-                    type: 'tool-call',
-                    toolName: 'display_history_analysis',
-                    toolCallId,
-                    args: { analysis }
-                  }
-                ]
-              }
-            ]
-          })
 
           return (
             <BotCard>
-              <AnalysisResult props={{ type: "history", content: analysis }} />
-            </BotCard>
-          )
-        }
-      },
-      display_folder_analysis: {
-        description: 'フォルダ内容の分析結果を表示します。',
-        parameters: z.object({
-          analysis: z.string().describe('分析結果の内容')
-        }),
-        generate: async function* ({ analysis }) {
-          yield (
-            <BotCard>
-              <AnalysisResultSkeleton />
-            </BotCard>
-          )
-
-          await sleep(1000)
-
-          const toolCallId = nanoid()
-
-          aiState.done({
-            ...aiState.get(),
-            messages: [
-              ...aiState.get().messages,
-              {
-                id: nanoid(),
-                role: 'assistant',
-                content: [
-                  {
-                    type: 'tool-call',
-                    toolName: 'display_folder_analysis',
-                    toolCallId,
-                    args: { analysis }
-                  }
-                ]
-              }
-            ]
-          })
-
-          return (
-            <BotCard>
-              <AnalysisResult props={{ type: "folder", content: analysis }} />
+              {textNode}
+              {toolNode}
             </BotCard>
           )
         }
@@ -400,43 +335,151 @@ async function submitUserMessage(content: string) {
       display_code_analysis: {
         description: 'リポジトリ全体のコード分析結果を表示します。',
         parameters: z.object({
-          analysis: z.string().describe('分析結果の内容')
+          owner: z.string().describe('リポジトリのオーナー名'),
+          repo: z.string().describe('リポジトリ名')
         }),
-        generate: async function* ({ analysis }) {
+        generate: async function* ({ owner, repo }) {
           yield (
             <BotCard>
               <AnalysisResultSkeleton />
             </BotCard>
           )
 
-          await sleep(1000)
+          try {
+            const session = await auth()
 
-          const toolCallId = nanoid()
-
-          aiState.done({
-            ...aiState.get(),
-            messages: [
-              ...aiState.get().messages,
-              {
-                id: nanoid(),
-                role: 'assistant',
-                content: [
+            if (!session) {
+              aiState.done({
+                ...aiState.get(),
+                messages: [
+                  ...aiState.get().messages,
                   {
-                    type: 'tool-call',
-                    toolName: 'display_code_analysis',
-                    toolCallId,
-                    args: { analysis }
+                    id: nanoid(),
+                    role: 'assistant',
+                    content: 'GitHubの認証情報が見つかりませんでした。'
                   }
                 ]
-              }
-            ]
-          })
+              });
 
-          return (
-            <BotCard>
-              <AnalysisResult props={{ type: "code", content: analysis }} />
-            </BotCard>
-          )
+              return (
+                <BotCard>
+                  <BotMessage content='GitHubの認証情報が見つかりませんでした。' />
+                </BotCard>
+              );
+            }
+
+            const octokit = new Octokit({
+              auth: session.accessToken
+            });
+
+            const { data: repoContents } = await octokit.repos.getContent({
+              owner,
+              repo,
+              path: ''
+            });
+
+            const binaryFileExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.exe', '.dll', '.so', '.dylib'];
+            let allCode = '';
+
+            const processContent = async (path: string = '') => {
+              const { data: repoContents } = await octokit.repos.getContent({
+                owner,
+                repo,
+                path
+              });
+
+              if (Array.isArray(repoContents)) {
+                for (const item of repoContents) {
+                  if (item.type === 'file') {
+                    if (!binaryFileExtensions.some(ext => item.name.toLowerCase().endsWith(ext))) {
+                      const { data: fileContent } = await octokit.repos.getContent({
+                        owner,
+                        repo,
+                        path: item.path
+                      });
+
+                      if ('content' in fileContent && typeof fileContent.content === 'string') {
+                        const decodedContent = Buffer.from(fileContent.content, 'base64').toString();
+                        const nullChars = decodedContent.split('').filter(char => char === '\0').length;
+                        if (nullChars / decodedContent.length < 0.1) {
+                          allCode += `File: ${item.path}\n${decodedContent}\n\n`;
+                        } else {
+                          allCode += `Binary content for ${item.path}\n\n`;
+                        }
+                      }
+                    } else {
+                      allCode += `Binary content for ${item.path}\n\n`;
+                    }
+                  } else if (item.type === 'dir') {
+                    await processContent(item.path);
+                  }
+                }
+              }
+            };
+
+            await processContent();
+
+            // コード分析を行う
+            const analysisPrompt = `
+              あなたはGitHubリポジトリ分析AIアシスタントです。以下のコードを分析し、簡潔かつ包括的な分析結果を提供してください：
+              
+              ${allCode}
+              
+              分析には以下の点を含めてください：
+              1. プロジェクトの概要
+              2. 使用されている主要な技術やフレームワーク
+              3. コードの構造と設計パターン
+              4. 潜在的な改善点やベストプラクティス
+              5. セキュリティの懸念事項（もしあれば）
+              6. コードの品質と保守性に関するコメント
+              
+              技術的な説明は簡潔に行い、改善点や推奨事項を提案してください。ユーザーにとって有用な洞察を提供することを心がけてください。
+            `;
+
+            const analysis = await generateText({
+              model: google('gemini-1.5-flash-latest'),
+              prompt: analysisPrompt
+            });
+
+            const toolCallId = nanoid();
+
+            aiState.done({
+              ...aiState.get(),
+              messages: [
+                ...aiState.get().messages,
+                {
+                  id: nanoid(),
+                  role: 'assistant',
+                  content: [
+                    {
+                      type: 'tool-call',
+                      toolName: 'display_code_analysis',
+                      toolCallId,
+                      args: { analysis }
+                    }
+                  ]
+                }
+              ]
+            });
+
+            const toolNode = (
+              <AnalysisResult props={{ type: "code", content: analysis.text }} />
+            );
+
+            return (
+              <BotCard>
+                {textNode}
+                {toolNode}
+              </BotCard>
+            );
+          } catch (error) {
+            console.error('Error fetching repository contents:', error);
+            return (
+              <BotCard>
+                Error: Unable to fetch repository contents.
+              </BotCard>
+            );
+          }
         }
       }
     }

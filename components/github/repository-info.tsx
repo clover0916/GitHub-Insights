@@ -2,7 +2,7 @@
 
 import React from 'react'
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Eye, GitFork, Star, Clock, Users, Calendar, Link, ExternalLink, Cake, RefreshCcw, Sparkles } from 'lucide-react';
+import { Eye, GitFork, Star, Users, ExternalLink, Cake, RefreshCcw, Sparkles } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { components } from '@octokit/openapi-types';
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";

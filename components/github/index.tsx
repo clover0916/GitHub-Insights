@@ -4,6 +4,7 @@ import dynamic from 'next/dynamic'
 import { ListRepositoriesSkelton } from './list-repositories-skeleton'
 import { AnalysisModesSkeleton } from './analysis-modes-skeleton'
 import { AnalysisResultSkeleton } from './analysis-result-skeleton'
+import { RepositoryInfoSkeleton } from './repository-info-skeleton'
 
 export { spinner } from './spinner'
 export { BotCard, BotMessage, SystemMessage } from './message'
@@ -15,7 +16,7 @@ const ListRepositories = dynamic(() => import('./list-repositories').then(mod =>
 
 const RepositoryInfo = dynamic(() => import('./repository-info').then(mod => mod.RepositoryInfo), {
   ssr: false,
-  loading: () => <ListRepositoriesSkelton />
+  loading: () => <RepositoryInfoSkeleton />
 })
 
 const AnalysisMode = dynamic(() => import('./analysis-mode').then(mod => mod.AnalysisMode), {
