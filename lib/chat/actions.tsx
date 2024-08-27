@@ -252,7 +252,7 @@ async function submitUserMessage(content: string) {
                     type: 'tool-call',
                     toolName: 'show_repository_info',
                     toolCallId,
-                    args: { repo: repo.data }
+                    args: { name, owner }
                   }
                 ]
               },
