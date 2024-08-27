@@ -1,8 +1,11 @@
 'use client'
 
 import { useActions, useUIState } from 'ai/rsc'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
 
 import type { AI } from '@/lib/chat/actions'
+import { MemoizedReactMarkdown } from '../markdown'
 
 interface AnalysisResultProps {
   type: 'history' | 'folder' | 'code'
@@ -14,27 +17,32 @@ export function AnalysisResult({ props: { type, content } }: { props: AnalysisRe
   const { submitUserMessage } = useActions()
 
   const titleMap = {
-    history: 'Project History Analysis',
-    folder: 'Folder Structure Analysis',
-    code: 'Code Analysis'
+    history: 'プロジェクト履歴の分析',
+    folder: 'フォルダ構造の分析',
+    code: 'コードの分析'
   }
 
   return (
-    <div className="rounded-lg bg-zinc-800 p-4">
-      <h2 className="mb-4 text-xl font-bold text-zinc-300">{titleMap[type]}</h2>
-      <div className="mb-4 whitespace-pre-wrap text-sm text-zinc-400">{content}</div>
-      <button
-        className="rounded-lg bg-blue-600 p-2 text-white hover:bg-blue-700"
-        onClick={async () => {
-          const response = await submitUserMessage(`Explain the ${titleMap[type]} in more detail`)
-          setMessages(currentMessages => [...currentMessages, response])
-        }}
-      >
-        Request More Details
-      </button>
-      <div className="mt-4 text-center text-sm text-zinc-500">
-        This analysis is based on the current state of the repository. For the most up-to-date information, please refer to the actual GitHub repository.
-      </div>
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>{titleMap[type]}</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <MemoizedReactMarkdown className="whitespace-pre-wrap text-sm ">{content}</MemoizedReactMarkdown>
+      </CardContent>
+      <CardFooter className="flex flex-col items-start gap-4">
+        <Button
+          onClick={async () => {
+            const response = await submitUserMessage(`詳細についての${titleMap[type]}を説明してください`)
+            setMessages(currentMessages => [...currentMessages, response])
+          }}
+        >
+          詳細をリクエストする
+        </Button>
+        <CardDescription className="text-center text-sm text-zinc-500">
+          この分析は、リポジトリの現在の状態に基づいています。最新の情報については、実際のGitHubリポジトリを参照してください。
+        </CardDescription>
+      </CardFooter>
+    </Card>
   )
 }

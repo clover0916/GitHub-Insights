@@ -372,12 +372,6 @@ async function submitUserMessage(content: string) {
               auth: session.accessToken
             });
 
-            const { data: repoContents } = await octokit.repos.getContent({
-              owner,
-              repo,
-              path: ''
-            });
-
             const binaryFileExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.exe', '.dll', '.so', '.dylib'];
             let allCode = '';
 
@@ -436,12 +430,15 @@ async function submitUserMessage(content: string) {
               技術的な説明は簡潔に行い、改善点や推奨事項を提案してください。ユーザーにとって有用な洞察を提供することを心がけてください。
             `;
 
-            const analysis = await generateText({
+            const analysisResult = await generateText({
               model: google('gemini-1.5-flash-latest'),
               prompt: analysisPrompt
             });
 
+            const analysis = analysisResult.text;
+
             const toolCallId = nanoid();
+
 
             aiState.done({
               ...aiState.get(),
@@ -458,12 +455,26 @@ async function submitUserMessage(content: string) {
                       args: { analysis }
                     }
                   ]
+                },
+                {
+                  id: nanoid(),
+                  role: 'tool',
+                  content: [
+                    {
+                      type: 'tool-result',
+                      toolName: 'display_code_analysis',
+                      toolCallId,
+                      result: {
+                        analysis
+                      }
+                    }
+                  ]
                 }
               ]
             });
 
             const toolNode = (
-              <AnalysisResult props={{ type: "code", content: analysis.text }} />
+              <AnalysisResult props={{ type: "code", content: analysisResult.text }} />
             );
 
             return (
