@@ -8,7 +8,7 @@ import {
   streamUI,
   createStreamableValue
 } from 'ai/rsc'
-import { createGoogleGenerativeAI } from '@ai-sdk/google';
+import { google } from '@ai-sdk/google';
 
 import {
   spinner,
@@ -35,10 +35,6 @@ import { Chat, Message } from '@/lib/types'
 import { auth } from '@/auth'
 import { Octokit } from "@octokit/rest";
 import { rateLimit } from './ratelimit';
-
-const google = createGoogleGenerativeAI({
-  apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY as string
-});
 
 async function submitUserMessage(content: string) {
   'use server'
