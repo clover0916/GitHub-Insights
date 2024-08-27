@@ -34,6 +34,7 @@ import { SpinnerMessage, UserMessage } from '@/components/github/message'
 import { Chat, Message } from '@/lib/types'
 import { auth } from '@/auth'
 import { Octokit } from "@octokit/rest";
+import { rateLimit } from './ratelimit';
 
 const google = createGoogleGenerativeAI({
   apiKey: process.env.NEXT_PUBLIC_GOOGLE_API_KEY as string
@@ -41,6 +42,8 @@ const google = createGoogleGenerativeAI({
 
 async function submitUserMessage(content: string) {
   'use server'
+
+  await rateLimit()
 
   const aiState = getMutableAIState<typeof AI>()
 
@@ -60,7 +63,7 @@ async function submitUserMessage(content: string) {
   let textNode: undefined | React.ReactNode
 
   const result = await streamUI({
-    model: google('gemini-1.5-pro-exp-0801', {
+    model: google('gemini-1.5-flash-latest', {
       structuredOutputs: false,
     }),
     initial: <SpinnerMessage />,
@@ -69,7 +72,7 @@ async function submitUserMessage(content: string) {
 
     1. ユーザーのGitHubアカウントに関連付けられたリポジトリ一覧を取得するには、\`list_repositories\`を呼び出します。これにより、ユーザーが所有または貢献しているリポジトリのリストが表示されます。
 
-    2. ユーザーがリストからリポジトリを選択するか、URLを直接入力した場合、\`set_repository\`を呼び出してそのリポジトリを分析対象として設定します。
+    2. ユーザーがリストからリポジトリを選択するか、URLを直接入力した場合、選択されたリポジトリの分析を開始します。リポジトリの内容を分析するための分析モードを選択する必要があります。
 
     3. ユーザーが分析モードを選択する必要がある場合は、\`show_analysis_modes\`を呼び出して分析モード選択UIを表示します。
 
@@ -122,16 +125,10 @@ async function submitUserMessage(content: string) {
     tools: {
       list_repositories: {
         description: 'ユーザーのリポジトリ情報を表示します。',
-        parameters: z.string().optional().describe('このパラメーターは使用されません。'),
+        parameters: z.object({
+          dummy: z.string().optional().describe('このパラメータは使用されません。')
+        }),
         generate: async function* () {
-          yield (
-            <BotCard>
-              <ListRepositoriesSkelton />
-            </BotCard>
-          )
-
-          await sleep(1000)
-
           const toolCallId = nanoid()
 
           const session = await auth() // Githubの認証情報を取得
@@ -203,7 +200,9 @@ async function submitUserMessage(content: string) {
       },
       show_analysis_modes: {
         description: '分析モード選択UIを表示します。',
-        parameters: z.string().optional().describe('このパラメーターは使用されません。'),
+        parameters: z.object({
+          dummy: z.string().optional().describe('このパラメータは使用されません。')
+        }),
         generate: async function* () {
           yield (
             <BotCard>

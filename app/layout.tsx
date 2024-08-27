@@ -13,8 +13,8 @@ export const metadata = {
     ? new URL(`https://${process.env.VERCEL_URL}`)
     : undefined,
   title: {
-    default: 'Github Insighter',
-    template: `%s - Github Insighter`
+    default: 'Repository Insights',
+    template: `%s - Repository Insights`
   },
   description: 'An AI-powered chatbot template built with Next.js and Vercel.',
   icons: {

@@ -6,7 +6,7 @@ import { Session } from '@/lib/types'
 import { getMissingKeys } from '@/app/actions'
 
 export const metadata = {
-  title: 'Github Insighter'
+  title: 'Repository Insights'
 }
 
 export default async function IndexPage() {
