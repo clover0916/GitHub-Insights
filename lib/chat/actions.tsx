@@ -67,6 +67,7 @@ async function submitUserMessage(content: string) {
       - リポジトリ情報の表示：\`show_repository_info\`
       - 各種分析の実行：
         - コード分析：\`display_code_analysis\`
+        - リポジトリのコード説明：\`explain_repository\`
 
       これらの機能は、ユーザーの要望や会話の流れに応じて自然に提案し、バックグラウンドで使用してください。例えば、ユーザーがリポジトリの一覧を見たいと言った場合、「はい、GitHubアカウントに関連付けられたリポジトリの一覧をお見せします」と言って\`list_repositories\`を呼び出すなど、自然な対話の中で機能を活用してください。
 
@@ -336,9 +337,10 @@ async function submitUserMessage(content: string) {
         description: 'リポジトリ全体のコード分析結果を表示します。',
         parameters: z.object({
           owner: z.string().describe('リポジトリのオーナー名'),
-          repo: z.string().describe('リポジトリ名')
+          repo: z.string().describe('リポジトリ名'),
+          codes: z.string().optional().describe('コードの内容（存在する場合）')
         }),
-        generate: async function* ({ owner, repo }) {
+        generate: async function* ({ owner, repo, codes }) {
           yield (
             <BotCard>
               <AnalysisResultSkeleton />
@@ -375,43 +377,46 @@ async function submitUserMessage(content: string) {
             const binaryFileExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.exe', '.dll', '.so', '.dylib'];
             let allCode = '';
 
-            const processContent = async (path: string = '') => {
-              const { data: repoContents } = await octokit.repos.getContent({
-                owner,
-                repo,
-                path
-              });
+            if (codes) {
+              allCode = codes;
+            } else {
+              const processContent = async (path: string = '') => {
+                const { data: repoContents } = await octokit.repos.getContent({
+                  owner,
+                  repo,
+                  path
+                });
 
-              if (Array.isArray(repoContents)) {
-                for (const item of repoContents) {
-                  if (item.type === 'file') {
-                    if (!binaryFileExtensions.some(ext => item.name.toLowerCase().endsWith(ext))) {
-                      const { data: fileContent } = await octokit.repos.getContent({
-                        owner,
-                        repo,
-                        path: item.path
-                      });
+                if (Array.isArray(repoContents)) {
+                  for (const item of repoContents) {
+                    if (item.type === 'file') {
+                      if (!binaryFileExtensions.some(ext => item.name.toLowerCase().endsWith(ext))) {
+                        const { data: fileContent } = await octokit.repos.getContent({
+                          owner,
+                          repo,
+                          path: item.path
+                        });
 
-                      if ('content' in fileContent && typeof fileContent.content === 'string') {
-                        const decodedContent = Buffer.from(fileContent.content, 'base64').toString();
-                        const nullChars = decodedContent.split('').filter(char => char === '\0').length;
-                        if (nullChars / decodedContent.length < 0.1) {
-                          allCode += `File: ${item.path}\n${decodedContent}\n\n`;
-                        } else {
-                          allCode += `Binary content for ${item.path}\n\n`;
+                        if ('content' in fileContent && typeof fileContent.content === 'string') {
+                          const decodedContent = Buffer.from(fileContent.content, 'base64').toString();
+                          const nullChars = decodedContent.split('').filter(char => char === '\0').length;
+                          if (nullChars / decodedContent.length < 0.1) {
+                            allCode += `File: ${item.path}\n${decodedContent}\n\n`;
+                          } else {
+                            allCode += `Binary content for ${item.path}\n\n`;
+                          }
                         }
+                      } else {
+                        allCode += `Binary content for ${item.path}\n\n`;
                       }
-                    } else {
-                      allCode += `Binary content for ${item.path}\n\n`;
+                    } else if (item.type === 'dir') {
+                      await processContent(item.path);
                     }
-                  } else if (item.type === 'dir') {
-                    await processContent(item.path);
                   }
                 }
-              }
-            };
-
-            await processContent();
+              };
+              await processContent();
+            }
 
             // コード分析を行う
             const analysisPrompt = `
@@ -473,7 +478,7 @@ async function submitUserMessage(content: string) {
               ]
             });
 
-            const toolNode = (
+            toolNode = (
               <AnalysisResult props={{ type: "code", content: analysisResult.text }} />
             );
 
@@ -492,7 +497,231 @@ async function submitUserMessage(content: string) {
             );
           }
         }
-      }
+      },
+      explain_repository: {
+        description: 'リポジトリの説明を表示します。',
+        parameters: z.object({
+          owner: z.string().describe('リポジトリのオーナー名'),
+          repo: z.string().describe('リポジトリ名'),
+          codes: z.string().optional().describe('コードの内容（存在する場合）')
+        }),
+        generate: async function* ({ owner, repo, codes }) {
+          yield (
+            <BotCard>
+              <AnalysisResultSkeleton />
+            </BotCard>
+          )
+
+          try {
+            const session = await auth()
+
+            if (!session) {
+              aiState.done({
+                ...aiState.get(),
+                messages: [
+                  ...aiState.get().messages,
+                  {
+                    id: nanoid(),
+                    role: 'assistant',
+                    content: 'GitHubの認証情報が見つかりませんでした。'
+                  }
+                ]
+              });
+
+              return (
+                <BotCard>
+                  <BotMessage content='GitHubの認証情報が見つかりませんでした。' />
+                </BotCard>
+              );
+            }
+
+            const octokit = new Octokit({
+              auth: session.accessToken
+            });
+
+            const binaryFileExtensions = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.ico', '.exe', '.dll', '.so', '.dylib'];
+            let allCode = '';
+
+            if (codes) {
+              allCode = codes;
+            } else {
+              const processContent = async (path: string = '', depth = 0) => {
+                const { data: repoContents } = await octokit.repos.getContent({
+                  owner,
+                  repo,
+                  path
+                });
+
+                const totalItems = Array.isArray(repoContents) ? repoContents.length : 0;
+                let processedItems = 0;
+
+                if (Array.isArray(repoContents)) {
+                  for (const item of repoContents) {
+                    processedItems++;
+                    const progress = Math.floor((processedItems / totalItems) * 100);
+                    console.log(`\rProcessing... ${progress}%`);
+
+                    if (item.type === 'file') {
+                      if (!binaryFileExtensions.some(ext => item.name.toLowerCase().endsWith(ext))) {
+                        const { data: fileContent } = await octokit.repos.getContent({
+                          owner,
+                          repo,
+                          path: item.path
+                        });
+
+                        if ('content' in fileContent && typeof fileContent.content === 'string') {
+                          const decodedContent = Buffer.from(fileContent.content, 'base64').toString();
+                          const nullChars = decodedContent.split('').filter(char => char === '\0').length;
+                          if (nullChars / decodedContent.length < 0.1) {
+                            allCode += `File: ${item.path}\n${decodedContent}\n\n`;
+                          } else {
+                            allCode += `Binary content for ${item.path}\n\n`;
+                          }
+                        }
+                      } else {
+                        allCode += `Binary content for ${item.path}\n\n`;
+                      }
+                    } else if (item.type === 'dir') {
+                      await processContent(item.path, depth + 1);
+                    }
+                  }
+                }
+
+                // 最後にプログレスバーをクリア
+                console.log('\rProcessing complete          ');
+              };
+
+              await processContent();
+            }
+
+            // コードの説明を行う
+            const analysisPrompt = `
+              あなたは熟練したソフトウェアエンジニアとして、提供されたコードを詳細に分析し、その本質と機能を明確に説明するAIアシスタントです。以下のコードを分析し、技術的かつ分かりやすい説明を提供してください：
+              ${allCode}
+              説明には以下の点を含めてください：
+
+              1. コードの主要な目的
+
+              このコードが解決しようとしている問題や達成しようとしている目標
+              想定されるユースケースや適用場面
+
+
+              2. 使用技術の概要
+
+              採用されているプログラミング言語
+              重要なライブラリやフレームワーク
+
+
+              3. コードの構造と主要コンポーネント
+
+              主要なクラス・関数の概要
+              各コンポーネントの役割と相互関係
+
+
+              4. 核心となるアルゴリズムや処理フロー
+
+              重要なロジックの詳細な解説
+              データの流れと変換プロセスの説明
+
+
+              5. 特筆すべき実装手法
+
+              興味深いプログラミング技法や独自のアプローチ
+              効率的な実装や創造的な解決策
+
+
+              6. 入出力とデータ操作
+
+              入力データの形式と処理方法
+              出力結果の形式と生成プロセス
+
+
+              7. 主要な機能の具体例
+
+              コードの動作を示す具体的なシナリオ
+              重要な関数やメソッドの使用例
+
+
+              8. 依存関係と外部リソース
+
+              外部APIやサービスとの連携
+              必要なデータソースや設定ファイル
+
+
+              9. 拡張性と柔軟性
+
+              コードのカスタマイズや機能追加の容易さ
+              異なる環境や要件への適応可能性
+
+
+
+              技術的な説明は正確かつ詳細に行い、必要に応じてコードスニペットを引用してください。専門用語を使用する際は、簡潔な説明を添えてください。説明は、コードの動作原理を深く理解したいエンジニアにとって有益な内容を心がけてください。また、コードの特徴的な部分や独創的な実装についても強調してください。
+              回答の構造化と情報の優先順位付けを行い、最も重要で本質的な情報が確実に伝わるようにしてください。トークン制限を考慮し、必要に応じて情報を簡潔にまとめる工夫をしてください。
+            `;
+
+            const analysisResult = await generateText({
+              model: google('gemini-1.5-flash-latest'),
+              prompt: analysisPrompt
+            });
+
+            const analysis = analysisResult.text;
+
+            const toolCallId = nanoid();
+
+
+            aiState.done({
+              ...aiState.get(),
+              messages: [
+                ...aiState.get().messages,
+                {
+                  id: nanoid(),
+                  role: 'assistant',
+                  content: [
+                    {
+                      type: 'tool-call',
+                      toolName: 'explain_repository',
+                      toolCallId,
+                      args: { analysis }
+                    }
+                  ]
+                },
+                {
+                  id: nanoid(),
+                  role: 'tool',
+                  content: [
+                    {
+                      type: 'tool-result',
+                      toolName: 'explain_repository',
+                      toolCallId,
+                      result: {
+                        analysis
+                      }
+                    }
+                  ]
+                }
+              ]
+            });
+
+            toolNode = (
+              <AnalysisResult props={{ type: "code", content: analysisResult.text }} />
+            );
+
+            return (
+              <BotCard>
+                {textNode}
+                {toolNode}
+              </BotCard>
+            );
+          } catch (error) {
+            console.error('Error fetching repository contents:', error);
+            return (
+              <BotCard>
+                Error: Unable to fetch repository contents.
+              </BotCard>
+            );
+          }
+        }
+      },
     }
   })
 

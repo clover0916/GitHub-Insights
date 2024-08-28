@@ -1,7 +1,21 @@
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../ui/card"
-import { Skeleton } from "../ui/skeleton"
+
+"use client";
+
+import { useState, useEffect } from "react";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../ui/card";
+import { Skeleton } from "../ui/skeleton";
 
 export const AnalysisResultSkeleton = () => {
+  const [isProcessingSlow, setIsProcessingSlow] = useState(false);
+
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      setIsProcessingSlow(true);
+    }, 30000);
+
+    return () => clearTimeout(timeout);
+  }, []);
+
   return (
     <Card>
       <CardHeader>
@@ -20,6 +34,11 @@ export const AnalysisResultSkeleton = () => {
           <Skeleton className="w-32 h-3 mt-2" />
         </CardDescription>
       </CardFooter>
+      {isProcessingSlow && (
+        <div className="absolute top-0 left-0 w-full h-full flex items-center justify-center bg-gray-900 bg-opacity-50">
+          <p className="text-white text-lg">コードの処理が通常よりも時間がかかっています...</p>
+        </div>
+      )}
     </Card>
-  )
-}
+  );
+};
